@@ -733,11 +733,13 @@ class Iterator(object):
 
 
 class NumpyArrayIterator(Iterator):
-    """Iterator yielding data from a Numpy array.
+    """Iterator yielding data from a Numpy-style array.
+
+	Numpy-style means that the objects has `shape` and `ndim` attributes.
 
     # Arguments
-        x: Numpy array of input data.
-        y: Numpy array of targets data.
+        x: Numpy-style array of input data.
+        y: Numpy-style array of targets data.
         image_data_generator: Instance of `ImageDataGenerator`
             to use for random transformations and normalization.
         batch_size: Integer, size of a batch.
@@ -758,15 +760,27 @@ class NumpyArrayIterator(Iterator):
                  batch_size=32, shuffle=False, seed=None,
                  data_format=None,
                  save_to_dir=None, save_prefix='', save_format='png'):
-        if y is not None and len(x) != len(y):
+        
+		# Make sure that x and y are numpy-style arrays
+        if not hasattr(x, 'shape'):
+            self.x = np.asarray(x)
+        else:
+            self.x = x
+            
+        if not hasattr(y, 'shape') and y is not None:
+            self.y = np.asarray(y)
+        else:
+            self.y = y
+        
+        if self.y is not None and len(self.x) != len(self.y):
             raise ValueError('X (images tensor) and y (labels) '
                              'should have the same length. '
                              'Found: X.shape = %s, y.shape = %s' %
-                             (np.asarray(x).shape, np.asarray(y).shape))
+                             (self.x.shape, self.y.shape))
 
         if data_format is None:
             data_format = K.image_data_format()
-        self.x = np.asarray(x, dtype=K.floatx())
+        
 
         if self.x.ndim != 4:
             raise ValueError('Input data in `NumpyArrayIterator` '
@@ -780,10 +794,6 @@ class NumpyArrayIterator(Iterator):
                              'either 1, 3 or 4 channels on axis ' + str(channels_axis) + '. '
                              'However, it was passed an array with shape ' + str(self.x.shape) +
                              ' (' + str(self.x.shape[channels_axis]) + ' channels).')
-        if y is not None:
-            self.y = np.asarray(y)
-        else:
-            self.y = None
         self.image_data_generator = image_data_generator
         self.data_format = data_format
         self.save_to_dir = save_to_dir
@@ -819,7 +829,16 @@ class NumpyArrayIterator(Iterator):
                 img.save(os.path.join(self.save_to_dir, fname))
         if self.y is None:
             return batch_x
-        batch_y = self.y[index_array]
+       
+        try:
+            batch_y = self.y[index_array]
+        except:
+            # The above does not work with h5py (Indexing elements must be in increasing order)
+			# Assemble batch "by hand" in this case.
+            batch_y = np.zeros(tuple([current_batch_size] + list(self.y.shape)[1:]), dtype=self.y.dtype)
+            for i, j in enumerate(index_array):
+                batch_y[i] = self.y[j]
+        
         return batch_x, batch_y
 
 
